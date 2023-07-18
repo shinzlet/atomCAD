@@ -155,7 +155,10 @@ impl MolecularPass {
             );
 
             rpass.set_bind_group(1, fragment.atoms().bind_group(), &[]);
-            rpass.draw(0..(fragment.atoms().len() * 3).try_into().unwrap(), 0..1)
+            rpass.draw(
+                0..(fragment.atoms().len() * 3 + 1).try_into().unwrap(),
+                0..1,
+            )
         }
     }
 }
