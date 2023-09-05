@@ -55,6 +55,8 @@ pub(crate) mod platform_impl;
 
 /// The user-visible name of the application, used for window titles and such.
 pub const APP_NAME: &str = "atomCAD";
+pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const APP_LICENSE: &str = env!("CARGO_PKG_LICENSE");
 
 use camera::ArcballCamera;
 use common::InputEvent;
