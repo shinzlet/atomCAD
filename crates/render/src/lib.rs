@@ -304,6 +304,7 @@ impl Renderer {
     pub fn render<'a>(
         &mut self,
         atoms: impl IntoIterator<Item = &'a Atoms>,
+        bonds: impl IntoIterator<Item = Option<&'a Bonds>>,
         transforms: Vec<ultraviolet::Mat4>,
     ) {
         let mut encoder = self
@@ -340,8 +341,12 @@ impl Renderer {
             })
             .expect("failed to get next swapchain");
 
-        self.molecular_pass
-            .run(&mut encoder, atoms, self.fragment_transforms.inner_buffer());
+        self.molecular_pass.run(
+            &mut encoder,
+            atoms,
+            bonds,
+            self.fragment_transforms.inner_buffer(),
+        );
 
         // if interactions.selected_fragments.len() != 0 {
         //     log::warn!("trying to render to stencil");

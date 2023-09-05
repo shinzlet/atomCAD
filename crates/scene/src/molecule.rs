@@ -108,7 +108,8 @@ impl MoleculeRepr {
                 BondRepr {
                     start_pos: atom_positions[0],
                     end_pos: atom_positions[0],
-                    order: *self.graph.edge_weight(edge_idx).unwrap(),
+                    order: *self.graph.edge_weight(edge_idx).unwrap() as u32,
+                    pad: 0,
                 }
             })
             .collect()
@@ -149,6 +150,10 @@ impl MoleculeRepr {
 
     pub fn atoms(&self) -> Option<&Atoms> {
         self.gpu_atoms.as_ref()
+    }
+
+    pub fn bonds(&self) -> Option<&Bonds> {
+        self.gpu_bonds.as_ref()
     }
 
     pub fn set_checkpoint(&mut self, checkpoint: MoleculeCheckpoint) {
