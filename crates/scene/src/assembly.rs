@@ -1,4 +1,4 @@
-use render::Atoms;
+use render::{Atoms, Bonds};
 use ultraviolet::Mat4;
 
 use crate::Molecule;
@@ -59,12 +59,13 @@ impl Assembly {
         }
     }
 
-    pub fn collect_atoms_and_transforms(&self) -> (Vec<&Atoms>, Vec<Mat4>) {
+    pub fn collect_rendering_primitives(&self) -> (Vec<&Atoms>, Vec<Option<&Bonds>>, Vec<Mat4>) {
         // The number of direct children of the world is an estimate of the
         // lower bound of the number of molecules. It is only possible for this to
         // overestimate if a child assembly contains zero children (which is unusual).
         let mut transforms = Vec::<Mat4>::with_capacity(self.components.len());
-        let mut molecules = Vec::<&Atoms>::with_capacity(self.components.len());
+        let mut gpu_atoms = Vec::<&Atoms>::with_capacity(self.components.len());
+        let mut gpu_bonds = Vec::<Option<&Bonds>>::with_capacity(self.components.len());
 
         // DFS
         let mut stack: Vec<(&Assembly, Mat4)> = vec![(self, Mat4::default())];
@@ -74,8 +75,10 @@ impl Assembly {
                 let new_transform = component.transform * acc_transform;
                 match &component.data {
                     ComponentType::Molecule(molecule) => {
+                        // how do we handle the no-bond case (i.e. He atom)?
                         if let Some(atoms) = molecule.repr.atoms() {
-                            molecules.push(atoms);
+                            gpu_atoms.push(atoms);
+                            gpu_bonds.push(molecule.repr.bonds());
                             transforms.push(new_transform);
                         }
                     }
@@ -86,7 +89,7 @@ impl Assembly {
             }
         }
 
-        (molecules, transforms)
+        (gpu_atoms, gpu_bonds, transforms)
     }
 
     /// Recursively synchronize the atom data of each molecule to the GPU.

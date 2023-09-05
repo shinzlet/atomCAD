@@ -12,10 +12,12 @@ use ultraviolet::Vec3;
 pub struct BondRepr {
     pub start_pos: Vec3, // with respect to fragment center
     pub end_pos: Vec3,
-    pub order: u8,
+    pub order: u32,
+    #[allow(unused)]
+    pub pad: u32,
 }
 
-static_assertions::const_assert_eq!(mem::size_of::<BondRepr>(), 28);
+static_assertions::const_assert_eq!(mem::size_of::<BondRepr>(), 32);
 unsafe impl AsBytes for BondRepr {}
 
 /// Essentially a per-fragment uniform.
