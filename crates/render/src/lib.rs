@@ -4,6 +4,7 @@
 
 pub use crate::{
     atoms::{AtomKind, AtomRepr, Atoms},
+    bonds::{BondRepr, Bonds},
     camera::{Camera, CameraRepr, RenderCamera},
 };
 use crate::{bind_groups::AsBindingResource as _, buffer_vec::BufferVec};
@@ -16,6 +17,7 @@ use winit::{dpi::PhysicalSize, window::Window};
 
 mod atoms;
 mod bind_groups;
+mod bonds;
 mod buffer_vec;
 mod camera;
 mod passes;
@@ -45,6 +47,7 @@ pub struct GlobalRenderResources {
     pub(crate) device: wgpu::Device,
     pub(crate) queue: wgpu::Queue,
     pub(crate) atom_bgl: wgpu::BindGroupLayout,
+    pub(crate) bond_bgl: wgpu::BindGroupLayout,
     pub(crate) linear_sampler: wgpu::Sampler,
     // pub(crate) staging_belt: Arc<Mutex<wgpu::util::StagingBelt>>,
 }
@@ -204,12 +207,28 @@ impl Renderer {
                 count: None,
             }],
         });
+
+        let bond_bgl = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+
         let linear_sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
 
         let render_resources = Rc::new(GlobalRenderResources {
             device,
             queue,
             atom_bgl,
+            bond_bgl,
             linear_sampler,
         });
 

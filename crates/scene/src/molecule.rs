@@ -2,8 +2,11 @@ use std::collections::HashMap;
 
 use lazy_static::lazy_static;
 use periodic_table::Element;
-use petgraph::{stable_graph, visit::IntoNodeReferences};
-use render::{AtomKind, AtomRepr, Atoms, GlobalRenderResources};
+use petgraph::{
+    stable_graph,
+    visit::{IntoEdgeReferences, IntoEdges, IntoNodeReferences},
+};
+use render::{AtomKind, AtomRepr, Atoms, BondRepr, Bonds, GlobalRenderResources};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use ultraviolet::Vec3;
@@ -72,6 +75,7 @@ pub struct MoleculeRepr {
     bounding_box: BoundingBox,
     gpu_synced: bool,
     gpu_atoms: Option<Atoms>,
+    gpu_bonds: Option<Bonds>,
     positions: AtomPositions,
 }
 
@@ -84,6 +88,28 @@ impl MoleculeRepr {
                 pos: *self
                     .pos(&node.spec)
                     .expect("Every atom in the graph should have a position"),
+            })
+            .collect()
+    }
+
+    fn bond_reprs(&self) -> Vec<BondRepr> {
+        self.graph
+            .edge_indices()
+            .map(|edge_idx| {
+                // get the atom positions that straddle the edge
+                let atom_positions = {
+                    let (i1, i2) = self.graph.edge_endpoints(edge_idx).unwrap();
+                    [i1, i2].map(|i| {
+                        let spec = &self.graph.node_weight(i).unwrap().spec;
+                        *self.pos(spec).unwrap()
+                    })
+                };
+
+                BondRepr {
+                    start_pos: atom_positions[0],
+                    end_pos: atom_positions[0],
+                    order: *self.graph.edge_weight(edge_idx).unwrap(),
+                }
             })
             .collect()
     }
@@ -110,6 +136,12 @@ impl MoleculeRepr {
             self.gpu_atoms = None;
         } else {
             self.gpu_atoms = Some(Atoms::new(gpu_resources, self.atom_reprs()));
+        }
+
+        if self.graph.edge_count() == 0 {
+            self.gpu_bonds = None;
+        } else {
+            self.gpu_bonds = Some(Bonds::new(gpu_resources, self.bond_reprs()));
         }
 
         self.gpu_synced = true;
