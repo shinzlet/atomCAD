@@ -185,8 +185,8 @@ impl MolecularPass {
                 );
 
                 rpass.set_bind_group(1, bonds_inst.bind_group(), &[]);
-                // the factor of 4 is used because each atom becomes a quad
-                rpass.draw(0..(bonds_inst.len() * 4).try_into().unwrap(), 0..1);
+                // the factor of 6 is used because each atom becomes a quad (two tris)
+                rpass.draw(0..(bonds_inst.len() * 6).try_into().unwrap(), 0..1);
             }
         }
     }
@@ -371,14 +371,19 @@ fn create_bond_render_pipeline(
             entry_point: "fs_main",
             targets: &[
                 Some(SWAPCHAIN_FORMAT.into()),
-                Some(wgpu::TextureFormat::Rgba16Float.into()),
+                // TODO: Figure out why the alpha channel doesn't work on bond rendering
+                Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                }),
             ],
         }),
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: Some(wgpu::Face::Front),
+            cull_mode: None,
             unclipped_depth: false,
             polygon_mode: wgpu::PolygonMode::Fill,
             conservative: false,

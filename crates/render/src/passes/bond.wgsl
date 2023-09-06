@@ -61,17 +61,42 @@ struct BondVertexOutput {
     center_view_space: vec4<f32>,
 };
 
+const pi = 3.14159265359;
+
 @vertex
 fn vs_main(in: BondVertexInput) -> BondVertexOutput {
-    let bond = bonds[in.index / 3u];
-    let vertex = vertices[in.index % 3u];
+    let bond = bonds[in.index / 6u];
 
+    // let vertex = vertices[in.index % 4u];
+    // Equivalent to:
+    // var angle = pi / 2.0 * (0.5 + f32(in.index % 3u))
+    // if in.index % 6u >= 3u {
+    //     angle += pi;
+    // }
     let part_fragment_transform = mat4x4<f32>(
         in.part_fragment_transform_0,
         in.part_fragment_transform_1,
         in.part_fragment_transform_2,
         in.part_fragment_transform_3
     );
+    let angle = pi * ((0.5 + f32(in.index % 3u)) / 2.0 + f32((in.index % 6u) / 3u));
+    let start_pos = (camera.view * part_fragment_transform * vec4<f32>(bond.start_pos, 1.0)).xy;
+    let end_pos = (camera.view * part_fragment_transform * vec4<f32>(bond.end_pos, 1.0)).xy;
+    let displacement = start_pos - end_pos;
+    let length = length(displacement);
+    let screen_angle = atan2(displacement.y, displacement.x);
+
+    let uv = vec2(sign(cos(angle)) + 1.0, sign(sin(angle)) + 1.0) / 2.0;
+    // make a rectangle - this looks like a weird use of sin and cos but we care about the
+    // end-to-end length, not the length of the diagonal! This is the axis-aligned rectangle
+    let aa_vertex = vec2(0.5 * length * sign(cos(angle)), 0.4 * sign(sin(angle)));
+    // Now we rotate it to the correct angle (this is a rotation matrix in longform)
+    var vertex = aa_vertex;
+    let csa = cos(screen_angle);
+    let ssa = sin(screen_angle);
+    vertex.x = csa * aa_vertex.x - ssa * aa_vertex.y;
+    vertex.y = ssa * aa_vertex.x + csa * aa_vertex.y;
+    
     let pos = (bond.start_pos + bond.end_pos) / 2.0;
     let position = part_fragment_transform * vec4<f32>(pos, 1.0);
 
@@ -88,7 +113,7 @@ fn vs_main(in: BondVertexInput) -> BondVertexOutput {
     let center_view_space = camera.view * vec4<f32>(pos, 0.0);
     let position_view_space = camera.view * position_worldspace;
 
-    return BondVertexOutput(position_clip_space, vertex, position_clip_space, position_view_space, center_view_space);
+    return BondVertexOutput(position_clip_space, uv, position_clip_space, position_view_space, center_view_space);
 }
 
 alias BondFragmentInput = BondVertexOutput;
@@ -102,30 +127,17 @@ struct BondFragmentOutput {
     normal: vec4<f32>,
 }
 
-fn map(value: f32, low1: f32, high1: f32, low2: f32, high2: f32) -> f32 {
-    return low2 + (value - low1) * (high2 - low2) / (high1 - low1);
-}
-
 @fragment
 fn fs_main(in: BondFragmentInput) -> BondFragmentOutput {
-    // return BondFragmentOutput(0.0, vec4(1.0, 0.0, 0.0, 1.0), vec4(1.0, 0.0, 0.0, 1.0));
-    let dist = length(in.uv);
-    if (dist > 1.0) {
-        discard;
-    }
-
-    let z = sqrt(1.0 - dist * dist);
-    let in_pos_clipspace = in.position_clip_space + camera.projection[2] * z;
+    let in_pos_clipspace = in.position_clip_space;
 
     let depth = in_pos_clipspace.z / in_pos_clipspace.w;
 
-    let color = vec4(
-        vec3(1.0, 0.0, 0.0) * map(z, 0.0, 1.0, 0.25, 1.0),
-        1.0
-    );
     let normal = vec4(normalize(in.position_view_space.xyz - in.center_view_space.xyz), 0.0);
+    let color = vec3(1.0, 1.0, 1.0);
+    let brightness = sin(in.uv.y * pi);
 
-    return BondFragmentOutput(depth, color, normal);
+    return BondFragmentOutput(depth, vec4(color * brightness, 1.0), normal);
 }
 
 // End of File
