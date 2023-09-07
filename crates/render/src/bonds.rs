@@ -5,19 +5,19 @@
 use crate::{buffer_vec::BufferVec, GlobalRenderResources};
 use common::AsBytes;
 use std::mem::{self, MaybeUninit};
-use ultraviolet::Vec3;
+use ultraviolet::Vec4;
 
 #[derive(Copy, Clone, PartialEq)]
-#[repr(C)]
+#[repr(C, align(16))]
 pub struct BondRepr {
-    pub start_pos: Vec3, // with respect to fragment center
-    pub end_pos: Vec3,
+    pub start_pos: Vec4, // with respect to fragment center
+    pub end_pos: Vec4,
     pub order: u32,
     #[allow(unused)]
     pub pad: u32,
 }
 
-static_assertions::const_assert_eq!(mem::size_of::<BondRepr>(), 32);
+static_assertions::const_assert_eq!(mem::size_of::<BondRepr>(), 48);
 unsafe impl AsBytes for BondRepr {}
 
 /// Essentially a per-fragment uniform.

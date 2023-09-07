@@ -106,8 +106,8 @@ impl MoleculeRepr {
                 };
 
                 BondRepr {
-                    start_pos: atom_positions[0],
-                    end_pos: atom_positions[0],
+                    start_pos: atom_positions[0].into_homogeneous_point(),
+                    end_pos: atom_positions[1].into_homogeneous_point(),
                     order: *self.graph.edge_weight(edge_idx).unwrap() as u32,
                     pad: 0,
                 }
@@ -122,8 +122,9 @@ impl MoleculeRepr {
         self.gpu_synced = false;
     }
 
-    pub(crate) fn relax(&mut self) {
-        self.positions = crate::dynamics::relax(&self.graph, &self.positions, 0.01);
+    // TODO: this should be pub(crate) but i'm testing something
+    pub fn relax(&mut self) {
+        self.positions = crate::dynamics::relax(&self.graph, &self.positions, 0.001, 1.0);
     }
 
     pub fn reupload_atoms(&mut self, gpu_resources: &GlobalRenderResources) {
