@@ -23,6 +23,7 @@ struct Bond {
     start_pos: vec3<f32>,
     end_pos: vec3<f32>,
     order: u32,
+    pad: u32
 };
 
 @group(0) @binding(0)

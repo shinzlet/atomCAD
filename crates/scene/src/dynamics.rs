@@ -7,8 +7,18 @@ pub fn relax(
     graph: &MoleculeGraph,
     positions: &HashMap<AtomSpecifier, Vec3>,
     threshold: f32,
+    perturbation: f32,
 ) -> HashMap<AtomSpecifier, Vec3> {
     let mut old_positions = positions.clone();
+    old_positions.values_mut().for_each(|pos| {
+        *pos += perturbation
+            * Vec3::new(
+                rand::random::<f32>() - 0.5,
+                rand::random::<f32>() - 0.5,
+                rand::random::<f32>() - 0.5,
+            )
+    });
+
     let mut positions = HashMap::<AtomSpecifier, Vec3>::with_capacity(positions.len());
     let mut step_count = 0;
 

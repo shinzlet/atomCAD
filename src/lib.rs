@@ -95,6 +95,21 @@ fn make_salt_demo_scene() -> Molecule {
     molecule
 }
 
+#[allow(dead_code)]
+fn make_methane_demo_scene() -> Molecule {
+    let mut molecule = Molecule::from_feature(Feature::RootAtom(periodic_table::Element::Carbon));
+
+    for _ in 0..4 {
+        molecule.push_feature(Feature::BondedAtom(scene::feature::BondedAtom {
+            target: scene::ids::AtomSpecifier::new(0),
+            element: periodic_table::Element::Hydrogen,
+        }));
+    }
+
+    molecule.apply_all_features();
+    molecule
+}
+
 async fn resume_renderer(
     window: &Window,
 ) -> (Renderer, Rc<GlobalRenderResources>, Assembly, Interactions) {
@@ -107,7 +122,7 @@ async fn resume_renderer(
     )
     .await;
 
-    let molecule = make_salt_demo_scene();
+    let molecule = make_methane_demo_scene();
     let molecule = serde_json::to_string(&molecule).unwrap();
     println!("{}", molecule);
     let molecule: Molecule = serde_json::from_str(&molecule).unwrap();
@@ -171,7 +186,68 @@ fn handle_event(
                         if let Some(_interactions) = interactions {
                             if let Some(gpu_resources) = gpu_resources {
                                 world.synchronize_buffers(gpu_resources);
+                                // Test code i was using to debug alignment. Can remove in later commits, I just
+                                // want to get it in the source tree
+                                // renderer.render(
+                                //     [&render::Atoms::new(
+                                //         &gpu_resources,
+                                //         [
+                                //             render::AtomRepr {
+                                //                 pos: Default::default(),
+                                //                 kind: render::AtomKind::new(
+                                //                     periodic_table::Element::Iodine,
+                                //                 ),
+                                //             },
+                                //             render::AtomRepr {
+                                //                 pos: ultraviolet::Vec3::new(10.0, 0.0, 0.0),
+                                //                 kind: render::AtomKind::new(
+                                //                     periodic_table::Element::Sulfur,
+                                //                 ),
+                                //             },
+                                //         ]
+                                //         .into_iter(),
+                                //     )]
+                                //     .into_iter(),
+                                //     [Some(&render::Bonds::new(
+                                //         &gpu_resources,
+                                //         [render::BondRepr {
+                                //             start_pos: Default::default(),
+                                //             end_pos: ultraviolet::Vec3::new(10.0, 0.0, 0.0),
+                                //             order: 1,
+                                //             pad: 0,
+                                //         }]
+                                //         .into_iter(),
+                                //     ))]
+                                //     .into_iter(),
+                                //     vec![ultraviolet::Mat4::default()],
+                                // );
+                                // renderer.render(
+                                //     [&render::Atoms::new(
+                                //         &gpu_resources,
+                                //         [render::AtomRepr {
+                                //             pos: Vec3::unit_x() * 10000.0,
+                                //             kind: render::AtomKind::new(
+                                //                 periodic_table::Element::Iodine,
+                                //             ),
+                                //         }]
+                                //         .into_iter(),
+                                //     )]
+                                //     .into_iter(),
+                                //     [Some(&render::Bonds::new(
+                                //         &gpu_resources,
+                                //         [render::BondRepr {
+                                //             start_pos: ultraviolet::Vec4::new(10.0, 0.0, 0.0, 1.0),
+                                //             end_pos: ultraviolet::Vec4::new(20.0, 0.0, 0.0, 1.0),
+                                //             order: 1,
+                                //             pad: 0,
+                                //         }]
+                                //         .into_iter(),
+                                //     ))]
+                                //     .into_iter(),
+                                //     vec![ultraviolet::Mat4::default()],
+                                // );
                             }
+
                             let (atoms, bonds, transforms) = world.collect_rendering_primitives();
                             renderer.render(atoms, bonds, transforms);
                         }
@@ -224,6 +300,8 @@ fn handle_event(
                                                 // molecule.reupload_atoms(
                                                 //     gpu_resources.as_ref().unwrap(),
                                                 // );
+                                            } else {
+                                                molecule.repr.relax();
                                             }
                                         });
                                     }
