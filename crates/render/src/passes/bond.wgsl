@@ -20,8 +20,8 @@ struct Camera {
 };
 
 struct Bond {
-    start_pos: vec3<f32>,
-    end_pos: vec3<f32>,
+    start_pos: vec4<f32>,
+    end_pos: vec4<f32>,
     order: u32,
     pad: u32
 };
@@ -60,6 +60,8 @@ struct BondVertexOutput {
     position_view_space: vec4<f32>,
     @location(3) @interpolate(flat)
     center_view_space: vec4<f32>,
+    @location(4) @interpolate(flat)
+    order: u32
 };
 
 const pi = 3.14159265359;
@@ -81,8 +83,8 @@ fn vs_main(in: BondVertexInput) -> BondVertexOutput {
         in.part_fragment_transform_3
     );
     let angle = pi * ((0.5 + f32(in.index % 3u)) / 2.0 + f32((in.index % 6u) / 3u));
-    let start_pos = (camera.view * part_fragment_transform * vec4<f32>(bond.start_pos, 1.0)).xy;
-    let end_pos = (camera.view * part_fragment_transform * vec4<f32>(bond.end_pos, 1.0)).xy;
+    let start_pos = (camera.view * part_fragment_transform * vec4<f32>(bond.start_pos.xyz, 1.0)).xy;
+    let end_pos = (camera.view * part_fragment_transform * vec4<f32>(bond.end_pos.xyz, 1.0)).xy;
     let displacement = start_pos - end_pos;
     let length = length(displacement);
     let screen_angle = atan2(displacement.y, displacement.x);
@@ -98,7 +100,7 @@ fn vs_main(in: BondVertexInput) -> BondVertexOutput {
     vertex.x = csa * aa_vertex.x - ssa * aa_vertex.y;
     vertex.y = ssa * aa_vertex.x + csa * aa_vertex.y;
     
-    let pos = (bond.start_pos + bond.end_pos) / 2.0;
+    let pos = (bond.start_pos + bond.end_pos).xyz / 2.0;
     let position = part_fragment_transform * vec4<f32>(pos, 1.0);
 
     let camera_right_worldspace = vec3<f32>(camera.view[0][0], camera.view[1][0], camera.view[2][0]);
@@ -114,7 +116,7 @@ fn vs_main(in: BondVertexInput) -> BondVertexOutput {
     let center_view_space = camera.view * vec4<f32>(pos, 0.0);
     let position_view_space = camera.view * position_worldspace;
 
-    return BondVertexOutput(position_clip_space, uv, position_clip_space, position_view_space, center_view_space);
+    return BondVertexOutput(position_clip_space, uv, position_clip_space, position_view_space, center_view_space, bond.order);
 }
 
 alias BondFragmentInput = BondVertexOutput;
@@ -136,7 +138,11 @@ fn fs_main(in: BondFragmentInput) -> BondFragmentOutput {
 
     let normal = vec4(normalize(in.position_view_space.xyz - in.center_view_space.xyz), 0.0);
     let color = vec3(1.0, 1.0, 1.0);
-    let brightness = sin(in.uv.y * pi);
+    let brightness = sin(in.uv.y * pi * (2.0 * f32(in.order) - 1.0));
+
+    if brightness < 0.0 {
+        discard;
+    }
 
     return BondFragmentOutput(depth, vec4(color * brightness, 1.0), normal);
 }
