@@ -97,6 +97,8 @@ fn make_salt_demo_scene() -> Molecule {
     molecule
 }
 
+// Note: this demo is pretty bad because all the atoms get spawned colinearly and so the relaxation does
+// not produce a tetrahedron quickly. That'll have to be revisited
 #[allow(dead_code)]
 fn make_methane_demo_scene() -> Molecule {
     let mut molecule = Molecule::from_feature(Feature::RootAtom(periodic_table::Element::Carbon));
@@ -124,7 +126,7 @@ async fn resume_renderer(
     )
     .await;
 
-    let molecule = make_methane_demo_scene();
+    let molecule = make_salt_demo_scene();
     let molecule = serde_json::to_string(&molecule).unwrap();
     println!("{}", molecule);
     let molecule: Molecule = serde_json::from_str(&molecule).unwrap();
