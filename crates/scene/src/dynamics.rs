@@ -13,9 +13,9 @@ pub fn relax(
     old_positions.values_mut().for_each(|pos| {
         *pos += perturbation
             * Vec3::new(
-                rand::random::<f32>() - 0.5,
-                rand::random::<f32>() - 0.5,
-                rand::random::<f32>() - 0.5,
+                fastrand::f32() - 0.5,
+                fastrand::f32() - 0.5,
+                fastrand::f32() - 0.5,
             )
     });
 

@@ -2,10 +2,7 @@ use std::collections::HashMap;
 
 use lazy_static::lazy_static;
 use periodic_table::Element;
-use petgraph::{
-    stable_graph,
-    visit::{IntoEdgeReferences, IntoEdges, IntoNodeReferences},
-};
+use petgraph::{stable_graph, visit::IntoNodeReferences};
 use render::{AtomKind, AtomRepr, Atoms, BondRepr, Bonds, GlobalRenderResources};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
