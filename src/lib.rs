@@ -218,7 +218,6 @@ fn handle_event(
                         if key.state == ElementState::Released {
                             match key.physical_key {
                                 KeyCode::Space => {
-                                    dbg!(&ui_state);
                                     if let (Some(world), Some(element), Some(selection)) =
                                         (world, &ui_state.selected_element, &ui_state.selected_atom)
                                     {
@@ -229,8 +228,17 @@ fn handle_event(
                                             }));
 
                                             editor.apply_all_edits();
+                                        });
+                                    }
+                                }
+                                KeyCode::Delete | KeyCode::Backspace => {
+                                    if let (Some(world), Some(selection)) =
+                                        (world, &ui_state.selected_atom)
+                                    {
+                                        world.walk_mut(|editor, _| {
+                                            editor.insert_edit(Edit::DeleteAtom(selection.clone()));
 
-                                            println!("applying");
+                                            editor.apply_all_edits();
                                         });
                                     }
                                 }

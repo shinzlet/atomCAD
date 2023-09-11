@@ -155,13 +155,20 @@ impl Molecule {
         self.atom_map.clear();
 
         for (atom_index, atom) in self.graph.node_references() {
-            // We have to recomputue the bounding box, as it is not
-            // stored in a checkpoint
+            self.atom_map.insert(atom.spec.clone(), atom_index);
+        }
+
+        // We have to recomputue the bounding box, as it is not
+        // stored in a checkpoint
+        self.recompute_bounding_box();
+    }
+
+    pub fn recompute_bounding_box(&mut self) {
+        for atom in self.graph.node_weights() {
             self.bounding_box.enclose_sphere(
                 *self.positions.get(&atom.spec).unwrap(),
                 PERIODIC_TABLE.element_reprs[atom.element as usize].radius,
             );
-            self.atom_map.insert(atom.spec.clone(), atom_index);
         }
     }
 
@@ -265,6 +272,26 @@ impl EditContext for Molecule {
         );
         self.gpu_synced = false;
         self.positions.insert(spec, pos);
+
+        Ok(())
+    }
+
+    fn remove_atom(&mut self, target: &AtomSpecifier) -> Result<(), EditError> {
+        let index = self
+            .atom_map
+            .get(target)
+            .ok_or(EditError::BrokenReference(ReferenceType::Atom))?;
+
+        self.graph.remove_node(*index);
+
+        self.atom_map
+            .remove(target)
+            .ok_or(EditError::BrokenReference(ReferenceType::Atom))?;
+        self.positions
+            .remove(target)
+            .ok_or(EditError::BrokenReference(ReferenceType::Atom))?;
+        self.recompute_bounding_box();
+        self.gpu_synced = false;
 
         Ok(())
     }
