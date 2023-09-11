@@ -434,6 +434,7 @@ async fn run(event_loop: EventLoop<()>, mut window: Option<Window>) {
     let mut world = Some(w);
     let mut interactions = Some(i);
     let mut cursor_pos: PhysicalPosition<f64> = Default::default();
+    let mut ui_state: UIState = Default::default();
 
     // Run the event loop.
     event_loop.run(move |event, _, control_flow| {
@@ -467,6 +468,7 @@ async fn run(event_loop: EventLoop<()>, mut window: Option<Window>) {
                     &mut world,
                     &mut interactions,
                     &cursor_pos,
+                    &mut ui_state,
                 );
             }
         }
