@@ -61,6 +61,13 @@ pub struct BondedAtom {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct CreateBond {
+    pub start: AtomSpecifier,
+    pub stop: AtomSpecifier,
+    pub order: u8,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PdbData {
     pub name: String,
     pub contents: String,
@@ -71,6 +78,7 @@ pub enum Edit {
     RootAtom(Element),
     BondedAtom(BondedAtom),
     DeleteAtom(AtomSpecifier),
+    CreateBond(CreateBond),
     PdbImport(PdbData),
 }
 
@@ -97,6 +105,9 @@ impl Edit {
             }
             Edit::DeleteAtom(spec) => {
                 ctx.remove_atom(&spec)?;
+            }
+            Edit::CreateBond(CreateBond { start, stop, order }) => {
+                ctx.create_bond(&start, &stop, *order)?;
             }
             Edit::PdbImport(PdbData { name, contents }) => {
                 crate::pdb::spawn_pdb(name, contents, edit_id, ctx)?;

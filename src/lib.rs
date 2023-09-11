@@ -61,7 +61,7 @@ pub const APP_LICENSE: &str = env!("CARGO_PKG_LICENSE");
 use camera::ArcballCamera;
 use common::{ids::AtomSpecifier, InputEvent};
 use molecule::{
-    edit::{self, BondedAtom, Edit, PdbData},
+    edit::{BondedAtom, CreateBond, Edit, PdbData},
     MoleculeEditor,
 };
 use periodic_table::Element;
@@ -82,6 +82,7 @@ use winit::{
 struct UIState {
     selected_element: Option<Element>,
     selected_atom: Option<AtomSpecifier>,
+    prev_selected_atom: Option<AtomSpecifier>,
 }
 
 #[allow(dead_code)]
@@ -218,6 +219,7 @@ fn handle_event(
                         if key.state == ElementState::Released {
                             match key.physical_key {
                                 KeyCode::Space => {
+                                    // Create atom
                                     if let (Some(world), Some(element), Some(selection)) =
                                         (world, &ui_state.selected_element, &ui_state.selected_atom)
                                     {
@@ -231,7 +233,32 @@ fn handle_event(
                                         });
                                     }
                                 }
+                                KeyCode::KeyB => {
+                                    // Create bond
+                                    if let (
+                                        Some(world),
+                                        Some(element),
+                                        Some(selection),
+                                        Some(prev_selection),
+                                    ) = (
+                                        world,
+                                        &ui_state.selected_element,
+                                        &ui_state.selected_atom,
+                                        &ui_state.prev_selected_atom,
+                                    ) {
+                                        world.walk_mut(|editor, _| {
+                                            editor.insert_edit(Edit::CreateBond(CreateBond {
+                                                start: selection.clone(),
+                                                stop: prev_selection.clone(),
+                                                order: 1,
+                                            }));
+
+                                            editor.apply_all_edits();
+                                        });
+                                    }
+                                }
                                 KeyCode::Delete | KeyCode::Backspace => {
+                                    // Delete atom
                                     if let (Some(world), Some(selection)) =
                                         (world, &ui_state.selected_atom)
                                     {
@@ -266,6 +293,11 @@ fn handle_event(
                                 {
                                     Some((ray_origin, ray_direction)) => {
                                         world.as_mut().unwrap().walk_mut(|molecule, _| {
+                                            std::mem::swap(
+                                                &mut ui_state.prev_selected_atom,
+                                                &mut ui_state.selected_atom,
+                                            );
+
                                             ui_state.selected_atom = molecule
                                                 .repr
                                                 .get_ray_hit(ray_origin, ray_direction);
