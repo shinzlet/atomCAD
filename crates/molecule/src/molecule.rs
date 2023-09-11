@@ -155,6 +155,12 @@ impl Molecule {
         self.atom_map.clear();
 
         for (atom_index, atom) in self.graph.node_references() {
+            // We have to recomputue the bounding box, as it is not
+            // stored in a checkpoint
+            self.bounding_box.enclose_sphere(
+                *self.positions.get(&atom.spec).unwrap(),
+                PERIODIC_TABLE.element_reprs[atom.element as usize].radius,
+            );
             self.atom_map.insert(atom.spec.clone(), atom_index);
         }
     }

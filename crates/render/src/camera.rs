@@ -132,7 +132,6 @@ impl RenderCamera {
         pixel: &PhysicalPosition<f64>,
         viewport_size: &PhysicalSize<u32>,
     ) -> Option<(Vec3, Vec3)> {
-        println!();
         let camera = self.camera.as_ref()?;
         let camera_repr = camera.repr();
 
