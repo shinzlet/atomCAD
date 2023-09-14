@@ -78,11 +78,23 @@ use winit::{
     window::{Window, WindowBuilder},
 };
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct UIState {
     selected_element: Option<Element>,
     selected_atom: Option<AtomSpecifier>,
     prev_selected_atom: Option<AtomSpecifier>,
+    bond_order: u8,
+}
+
+impl Default for UIState {
+    fn default() -> Self {
+        UIState {
+            bond_order: 1u8,
+            selected_atom: None,
+            selected_element: None,
+            prev_selected_atom: None,
+        }
+    }
 }
 
 #[allow(dead_code)]
