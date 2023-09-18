@@ -62,7 +62,7 @@ use camera::ArcballCamera;
 use common::{ids::AtomSpecifier, InputEvent};
 use molecule::{
     edit::{BondedAtom, CreateBond, Edit, PdbData},
-    MoleculeEditor,
+    MoleculeEditor, RaycastHit,
 };
 use periodic_table::Element;
 use render::{GlobalRenderResources, Interactions, RenderOptions, Renderer};
@@ -132,9 +132,6 @@ async fn resume_renderer(
     .await;
 
     let molecule = make_salt_demo_scene();
-    let molecule = serde_json::to_string(&molecule).unwrap();
-    println!("{}", molecule);
-    let molecule: MoleculeEditor = serde_json::from_str(&molecule).unwrap();
 
     let assembly = Assembly::from_components([Component::from_molecule(molecule, Mat4::default())]);
     let interactions = Interactions::default();
@@ -197,8 +194,8 @@ fn handle_event(
                             if let Some(gpu_resources) = gpu_resources {
                                 world.synchronize_buffers(gpu_resources);
                             }
-                            let (atoms, transforms) = world.collect_atoms_and_transforms();
-                            renderer.render(atoms, transforms);
+                            let (atoms, bonds, transforms) = world.collect_rendering_primitives();
+                            renderer.render(&atoms, &bonds, transforms);
                         }
                     }
                 }
@@ -247,14 +244,8 @@ fn handle_event(
                                 }
                                 KeyCode::KeyB => {
                                     // Create bond
-                                    if let (
-                                        Some(world),
-                                        Some(element),
-                                        Some(selection),
-                                        Some(prev_selection),
-                                    ) = (
+                                    if let (Some(world), Some(selection), Some(prev_selection)) = (
                                         world,
-                                        &ui_state.selected_element,
                                         &ui_state.selected_atom,
                                         &ui_state.prev_selected_atom,
                                     ) {
@@ -305,15 +296,27 @@ fn handle_event(
                                 {
                                     Some((ray_origin, ray_direction)) => {
                                         world.as_mut().unwrap().walk_mut(|molecule, _| {
-                                            std::mem::swap(
-                                                &mut ui_state.prev_selected_atom,
-                                                &mut ui_state.selected_atom,
-                                            );
+                                            if let Some(hit) =
+                                                molecule.repr.get_ray_hit(ray_origin, ray_direction)
+                                            {
+                                                match hit {
+                                                    RaycastHit::Atom(atom) => {
+                                                        std::mem::swap(
+                                                            &mut ui_state.prev_selected_atom,
+                                                            &mut ui_state.selected_atom,
+                                                        );
 
-                                            ui_state.selected_atom = molecule
-                                                .repr
-                                                .get_ray_hit(ray_origin, ray_direction);
-                                            dbg!(molecule.repr.bounding_box());
+                                                        println!("Atom {:?} clicked!", atom);
+                                                        ui_state.selected_atom = Some(atom);
+                                                    }
+                                                    RaycastHit::Bond(a1, a2) => {
+                                                        println!(
+                                                            "Bond ({:?} -> {:?}) clicked!",
+                                                            a1, a2
+                                                        );
+                                                    }
+                                                }
+                                            }
                                         });
                                     }
                                     None => {
@@ -350,8 +353,6 @@ fn handle_event(
         }
     }
 }
-
-#[cfg(not(target_arch = "wasm32"))]
 fn run(event_loop: EventLoop<()>, mut window: Option<Window>) {
     // The event handling loop is terminated when the main window is closed.
     // We can trigger this by dropping the window, so we wrap it in the Option
@@ -370,94 +371,33 @@ fn run(event_loop: EventLoop<()>, mut window: Option<Window>) {
     let mut ui_state: UIState = Default::default();
 
     // Run the event loop.
+    let mut running = false;
     event_loop.run(move |event, _, control_flow| {
         // When we are done handling this event, suspend until the next event.
         *control_flow = ControlFlow::Wait;
 
-        // Handle events.
+        // On some platforms, namely wasm32 + webgl2, the window is not yet
+        // ready to create the rendering surface when Event::Resumed is
+        // received.  We therefore just record the fact that the we're in the
+        // running state.
         match event {
             Event::Resumed => {
                 // Called on iOS or Android when the application is brought
-                // into focus.  We must (re-)create the window and any GPU
-                // resources, because they don't persist across application
-                // suspensions.
-                futures::executor::block_on(async {
-                    let (mut r, g, w, i) = resume_renderer(window.as_ref().unwrap()).await;
-                    r.set_camera(ArcballCamera::new(Vec3::zero(), 100.0, 1.0));
-                    renderer = Some(r);
-                    gpu_resources = Some(g);
-                    world = Some(w);
-                    interactions = Some(i);
-                });
+                // into focus.  The GPU resources need to be reallocated on
+                // resume.
+                running = true;
             }
             Event::Suspended => {
                 // Called on iOS or Android when the application is sent to
                 // the background.  We preemptively destroy the window and any
                 // used GPU resources as the system might take them from us.
+                running = false;
                 interactions = None;
                 world = None;
                 gpu_resources = None;
                 renderer = None;
                 window = None;
             }
-            Event::WindowEvent {
-                event: WindowEvent::CursorMoved { position, .. },
-                ..
-            } => {
-                // The event system does not expose the cursor position on-demand. We track all
-                // the mouse movement events to make this easier to access later.
-                cursor_pos = position;
-            }
-            _ => {
-                // Process all other events.
-                handle_event(
-                    event,
-                    control_flow,
-                    &mut window,
-                    &mut renderer,
-                    &mut gpu_resources,
-                    &mut world,
-                    &mut interactions,
-                    &cursor_pos,
-                    &mut ui_state,
-                );
-            }
-        }
-    })
-}
-
-#[cfg(target_arch = "wasm32")]
-async fn run(event_loop: EventLoop<()>, mut window: Option<Window>) {
-    // The event handling loop is terminated when the main window is closed.
-    // We can trigger this by dropping the window, so we wrap it in the Option
-    // type.  This is a bit of a hack, but it works.  We require that we are
-    // called with a valid window, however.
-    window.as_ref().expect("window should exist");
-
-    // These resources are *supposed* to be created after receiving the
-    // Event::Resumed message within the event loop.  However on since async
-    // support on wasm is wonky, we can't call `resume_renderer` from within
-    // the event loop.  There seems to be no problem with calling it here and
-    // then never dropping the resources on Event::Suspended.
-    let (mut r, g, w, i) = resume_renderer(window.as_ref().unwrap()).await;
-    r.set_camera(ArcballCamera::new(Vec3::zero(), 100.0, 1.0));
-    let mut renderer = Some(r);
-    let mut gpu_resources = Some(g);
-    let mut world = Some(w);
-    let mut interactions = Some(i);
-    let mut cursor_pos: PhysicalPosition<f64> = Default::default();
-    let mut ui_state: UIState = Default::default();
-
-    // Run the event loop.
-    event_loop.run(move |event, _, control_flow| {
-        // When we are done handling this event, suspend until the next event.
-        *control_flow = ControlFlow::Wait;
-
-        // Handle events.
-        match event {
-            // Ignore these messages (see above).
-            Event::Resumed => {}
-            Event::Suspended => {}
 
             // The event system does not expose the cursor position on-demand.
             // We track all the mouse movement events to make this easier to
@@ -469,21 +409,37 @@ async fn run(event_loop: EventLoop<()>, mut window: Option<Window>) {
                 cursor_pos = position;
             }
 
-            // Process all other events.
-            _ => {
-                handle_event(
-                    event,
-                    control_flow,
-                    &mut window,
-                    &mut renderer,
-                    &mut gpu_resources,
-                    &mut world,
-                    &mut interactions,
-                    &cursor_pos,
-                    &mut ui_state,
-                );
+            _ => (),
+        }
+
+        // Check that we've received Event::Resumed, and the window's inner
+        // dimensions are defined.  (Prevents a panic on wasm32 + webgl2).
+        if running && renderer.is_none() {
+            let size = window.as_ref().unwrap().inner_size();
+            if size.width > 0 && size.height > 0 {
+                futures::executor::block_on(async {
+                    let (mut r, g, w, i) = resume_renderer(window.as_ref().unwrap()).await;
+                    r.set_camera(ArcballCamera::new(Vec3::zero(), 100.0, 1.0));
+                    renderer = Some(r);
+                    gpu_resources = Some(g);
+                    world = Some(w);
+                    interactions = Some(i);
+                });
             }
         }
+
+        // Handle events.
+        handle_event(
+            event,
+            control_flow,
+            &mut window,
+            &mut renderer,
+            &mut gpu_resources,
+            &mut world,
+            &mut interactions,
+            &cursor_pos,
+            &mut ui_state,
+        );
     })
 }
 
@@ -542,14 +498,13 @@ pub fn start(event_loop_builder: &mut EventLoopBuilder<()>) {
         use winit::platform::web::WindowExtWebSys;
         web_sys::window()
             .and_then(|win| win.document())
-            .and_then(|doc| {
-                let dst = doc.get_element_by_id("app-container")?;
-                let canvas = web_sys::Element::from(window.canvas()?);
-                dst.append_child(&canvas).ok()?;
-                Some(())
+            .and_then(|doc| doc.get_element_by_id("app-container"))
+            .and_then(|dst| {
+                dst.append_child(&web_sys::Element::from(window.canvas()?))
+                    .ok()
             })
             .expect("Couldn't append canvas to document body.");
-        wasm_bindgen_futures::spawn_local(run(event_loop, Some(window)));
+        run(event_loop, Some(window));
     }
 }
 

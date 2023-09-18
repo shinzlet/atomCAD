@@ -8,7 +8,7 @@ use common::{ids::AtomSpecifier, BoundingBox};
 use lazy_static::lazy_static;
 use periodic_table::Element;
 use petgraph::{stable_graph, visit::IntoNodeReferences};
-use render::{AtomBuffer, AtomKind, AtomRepr, GlobalRenderResources};
+use render::{AtomBuffer, AtomKind, AtomRepr, BondBuffer, BondRepr, GlobalRenderResources};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use ultraviolet::Vec3;
@@ -19,6 +19,8 @@ lazy_static! {
     pub static ref PERIODIC_TABLE: periodic_table::PeriodicTable =
         periodic_table::PeriodicTable::new();
 }
+
+const BOND_RAYCAST_RADIUS: f32 = 0.8;
 
 /// A graph representation of a molecule.
 /// The molecule graph is stable to ensure that deleting atoms will not change
@@ -55,6 +57,12 @@ pub struct MoleculeCheckpoint {
     graph: MoleculeGraph,
     #[serde_as(as = "Vec<(_, _)>")]
     positions: AtomPositions,
+}
+
+#[derive(Clone, Debug)]
+pub enum RaycastHit {
+    Atom(AtomSpecifier),
+    Bond(AtomSpecifier, AtomSpecifier),
 }
 
 /// Stores the data for each atom in a `Molecule`.
@@ -102,20 +110,49 @@ pub struct Molecule {
     bounding_box: BoundingBox,
     gpu_synced: bool,
     gpu_atoms: Option<AtomBuffer>,
+    gpu_bonds: Option<BondBuffer>,
     positions: AtomPositions,
 }
 
 impl Molecule {
-    pub fn atom_reprs(&self) -> Vec<AtomRepr> {
-        self.graph
-            .node_weights()
-            .map(|node| AtomRepr {
-                kind: AtomKind::new(node.element),
-                pos: *self
-                    .pos(&node.spec)
-                    .expect("Every atom in the graph should have a position"),
+    fn collect_rendering_primitives(&self) -> (Vec<AtomRepr>, Vec<BondRepr>) {
+        // There are likely optimizations we can use to remove this map altogether,
+        // but petgraph's documentation doesn't promise anything about the node
+        // iteration order which makes things difficult.
+        let mut index_map: HashMap<AtomIndex, u32> =
+            HashMap::with_capacity(self.graph.node_count());
+
+        let atoms = self
+            .graph
+            .node_references()
+            .enumerate()
+            .map(|(buffer_index, (atom_index, node))| {
+                index_map.insert(atom_index, buffer_index as u32);
+
+                AtomRepr {
+                    kind: AtomKind::new(node.element),
+                    pos: *self
+                        .pos(&node.spec)
+                        .expect("Every atom in the graph should have a position"),
+                }
             })
-            .collect()
+            .collect();
+
+        let edges = self
+            .graph
+            .edge_indices()
+            .map(|edge_idx| {
+                let (a1, a2) = self.graph.edge_endpoints(edge_idx).unwrap();
+
+                BondRepr {
+                    atom_1: *index_map.get(&a1).unwrap(),
+                    atom_2: *index_map.get(&a2).unwrap(),
+                    order: *self.graph.edge_weight(edge_idx).unwrap(),
+                }
+            })
+            .collect();
+
+        (atoms, edges)
     }
 
     pub fn clear(&mut self) {
@@ -129,7 +166,7 @@ impl Molecule {
         self.positions = crate::dynamics::relax(&self.graph, &self.positions, 0.01);
     }
 
-    pub fn reupload_atoms(&mut self, gpu_resources: &GlobalRenderResources) {
+    pub fn synchronize_buffers(&mut self, gpu_resources: &GlobalRenderResources) {
         // TODO: not working, see shinzlet/atomCAD #3
         // self.gpu_atoms.reupload_atoms(&atoms, gpu_resources);
 
@@ -138,8 +175,19 @@ impl Molecule {
 
         if self.graph.node_count() == 0 {
             self.gpu_atoms = None;
+
+            // Currently, bond rendering depends on having access to coordinates inside the
+            // atom buffer. So, if there are no atoms, there must not be any bonds.
+            self.gpu_bonds = None;
         } else {
-            self.gpu_atoms = Some(AtomBuffer::new(gpu_resources, self.atom_reprs()));
+            let (atom_reprs, bond_reprs) = self.collect_rendering_primitives();
+            self.gpu_atoms = Some(AtomBuffer::new(gpu_resources, atom_reprs));
+
+            if bond_reprs.is_empty() {
+                self.gpu_bonds = None
+            } else {
+                self.gpu_bonds = Some(BondBuffer::new(gpu_resources, bond_reprs))
+            }
         }
 
         self.gpu_synced = true;
@@ -147,6 +195,10 @@ impl Molecule {
 
     pub fn atoms(&self) -> Option<&AtomBuffer> {
         self.gpu_atoms.as_ref()
+    }
+
+    pub fn bonds(&self) -> Option<&BondBuffer> {
+        self.gpu_bonds.as_ref()
     }
 
     pub fn set_checkpoint(&mut self, checkpoint: MoleculeCheckpoint) {
@@ -184,7 +236,7 @@ impl Molecule {
     }
 
     // TODO: Optimize heavily (use octree, compute entry point of ray analytically)
-    pub fn get_ray_hit(&self, origin: Vec3, direction: Vec3) -> Option<AtomSpecifier> {
+    pub fn get_ray_hit(&self, origin: Vec3, direction: Vec3) -> Option<RaycastHit> {
         // Using `direction` as a velocity vector, determine when the ray will
         // collide with the bounding box. Note the ? - this fn returns early if there
         // isn't a collision.
@@ -206,13 +258,17 @@ impl Molecule {
 
         // This is an empirically reasonable value. It is still possible to miss an atom if
         // the user clicks on the very edge of it, but this is rare.
-        let step_size = PERIODIC_TABLE.element_reprs[Element::Hydrogen as usize].radius / 10.0;
+        let step_size = f32::min(
+            PERIODIC_TABLE.element_reprs[Element::Hydrogen as usize].radius,
+            BOND_RAYCAST_RADIUS,
+        ) / 10.0;
         let step = direction * step_size;
         let t_span = tmax - f32::max(0.0, tmin);
         // the direction vector is normalized, so 1 unit of time = 1 unit of space
         let num_steps = (t_span / step_size) as usize;
 
         for _ in 0..num_steps {
+            // Check if an atom intersection occurs
             for atom in self.graph.node_weights() {
                 let atom_radius_sq = PERIODIC_TABLE.element_reprs[atom.element as usize]
                     .radius
@@ -223,7 +279,24 @@ impl Molecule {
                     .get(&atom.spec)
                     .expect("Every atom in the graph should have an associated position");
                 if (current_pos - atom_pos).mag_sq() < atom_radius_sq {
-                    return Some(atom.spec.clone());
+                    return Some(RaycastHit::Atom(atom.spec.clone()));
+                }
+            }
+
+            // Check if a bond intersection occurs
+            for edge in self.graph.edge_indices() {
+                let (a1, a2) = self.graph.edge_endpoints(edge).unwrap();
+                let [s1, s2] = [a1, a2]
+                    .map(|atom_index| self.graph.node_weight(atom_index).unwrap().spec.clone());
+                let [p1, p2] = [&s1, &s2].map(|atom_spec| {
+                    *self
+                        .positions
+                        .get(atom_spec)
+                        .expect("Every atom in the graph should have an associated position")
+                });
+
+                if common::inside_cylinder(p1, p2, BOND_RAYCAST_RADIUS, current_pos) {
+                    return Some(RaycastHit::Bond(s1, s2));
                 }
             }
 
